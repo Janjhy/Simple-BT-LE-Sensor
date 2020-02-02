@@ -2,6 +2,8 @@ package com.example.bluetoothscanner
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
@@ -25,7 +27,7 @@ const val REQUEST_ENABLE_FINE_LOCATION = 1
 const val REQUEST_ENABLE_BT = 2
 const val SCAN_PERIOD: Long = 3000
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), OnItemClickListener, BleWrapper.BleCallback {
 
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var scanResults: MutableList<Pair<String, ScanResult>> = mutableListOf()
@@ -34,13 +36,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var viewManager: RecyclerView.LayoutManager
 
+    private var wrapper: BleWrapper? = null
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         viewManager = LinearLayoutManager(this)
-        listAdapter = BTListAdapter(this, scanResults)
+        listAdapter = BTListAdapter(this, scanResults, this)
 
 
         recyclerView = findViewById<RecyclerView>(R.id.bt_list).apply {
@@ -81,6 +85,24 @@ class MainActivity : AppCompatActivity() {
         bluetoothAdapter?.takeIf { !it.isEnabled }?.apply {
             val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT)
+        }
+
+    }
+
+    override fun onItemClicked(res: Pair<String, ScanResult>) {
+        wrapper = BleWrapper(this, res.first)
+        if(res.second.scanRecord.serviceUuids != null){
+
+            res.second.scanRecord.serviceUuids.forEach {
+                Log.d("click", res.first)
+                Log.d("uuid", it.uuid.toString())
+                Log.d("heart rate uuid", wrapper?.HEART_RATE_SERVICE_UUID.toString())
+                if (it.uuid == wrapper?.HEART_RATE_SERVICE_UUID) {
+                    Log.d("if uuid match", res.first)
+                    wrapper?.addListener(this)
+                    wrapper?.connect(false)
+                }
+            }
         }
 
     }
@@ -159,5 +181,24 @@ class MainActivity : AppCompatActivity() {
             Log.d("list", scanResults.toString())
             Log.d("size", scanResults.size.toString())
         }
+    }
+
+    override fun onDeviceReady(gatt: BluetoothGatt) {
+        wrapper?.HEART_RATE_SERVICE_UUID?.let {
+            wrapper?.HEART_RATE_MEASUREMENT_CHAR_UUID?.let { it1 ->
+                wrapper!!.getNotifications(gatt,
+                    it, it1)
+            }
+        }
+    }
+
+    override fun onDeviceDisconnected() {
+
+    }
+
+    override fun onNotify(characteristic: BluetoothGattCharacteristic) {
+        Log.d("bpm", characteristic.value[1].toString())
+        textview_bmp.text = characteristic.value[1].toString()
+
     }
 }
